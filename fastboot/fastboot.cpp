@@ -368,6 +368,8 @@ static int show_help() {
             "                                           Create bootimage and flash it.\n"
             "  devices [-l]                             List all connected devices [with\n"
             "                                           device paths].\n"
+            "  dump <partition> <filename>              Copy device partition to file\n"
+            "  dump memory <start> <len> <filename>     Copy device memory to file\n"
             "  continue                                 Continue with autoboot.\n"
             "  reboot [bootloader|emergency]            Reboot device [into bootloader or emergency mode].\n"
             "  reboot-bootloader                        Reboot device into bootloader.\n"
@@ -1378,6 +1380,26 @@ static std::string fb_fix_numeric_var(std::string var) {
     return var;
 }
 
+struct fastboot_dump_action act;
+
+static void do_dump_command(std::vector<std::string>* args) {
+    std::string command("dump:");
+    std::string out_file;
+    std::string what;
+
+    what = next_arg(args);
+    command += what;
+    memcpy(act.hdr.magic, RAW_MAGIC_NUM, strlen(RAW_MAGIC_NUM));
+    if (what == "memory") {
+        act.hdr.address = parse_num(next_arg(args).c_str());
+        act.hdr.raw_size = parse_num(next_arg(args).c_str());
+    }
+    act.filename = next_arg(args);
+    act.cmd = command;
+
+    fb_queue_dump(&act);
+}
+
 static unsigned fb_get_flash_block_size(Transport* transport, std::string name) {
     std::string sizeString;
     if (!fb_getvar(transport, name, &sizeString) || sizeString.empty()) {
@@ -1836,6 +1858,8 @@ int main(int argc, char **argv)
         } else if (command == "get_staged") {
             std::string filename = next_arg(&args);
             fb_queue_upload(filename);
+        } else if (command == "dump") {
+            do_dump_command(&args);
         } else if (command == "oem") {
             do_oem_command("oem", &args);
         } else if (command == "flashing") {

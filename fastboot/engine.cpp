@@ -51,6 +51,7 @@ enum Op {
     OP_WAIT_FOR_DISCONNECT,
     OP_DOWNLOAD_FD,
     OP_UPLOAD,
+    OP_DUMP,
 };
 
 struct Action {
@@ -307,6 +308,15 @@ void fb_queue_wait_for_disconnect() {
     queue_action(OP_WAIT_FOR_DISCONNECT, "");
 }
 
+void fb_queue_dump(struct fastboot_dump_action *act)
+{
+    Action& a = queue_action(OP_DUMP, "");
+
+    a.data = act;
+    a.msg = android::base::StringPrintf("Dumping to file %s",
+                                        act->filename.c_str());
+}
+
 int64_t fb_execute_queue(Transport* transport) {
     int64_t status = 0;
     for (auto& a : action_list) {
@@ -335,6 +345,10 @@ int64_t fb_execute_queue(Transport* transport) {
             // We already showed the notice because it's in `Action::msg`.
         } else if (a->op == OP_DOWNLOAD_SPARSE) {
             status = fb_download_data_sparse(transport, reinterpret_cast<sparse_file*>(a->data));
+            status = a->func(*a, status, status ? fb_get_error().c_str() : "");
+            if (status) break;
+        } else if (a->op == OP_DUMP) {
+            status = fb_dump(transport, reinterpret_cast<const struct fastboot_dump_action*>(a->data));
             status = a->func(*a, status, status ? fb_get_error().c_str() : "");
             if (status) break;
         } else if (a->op == OP_WAIT_FOR_DISCONNECT) {

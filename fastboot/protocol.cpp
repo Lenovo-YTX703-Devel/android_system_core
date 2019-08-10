@@ -29,6 +29,8 @@
 #define round_down(a, b) \
     ({ typeof(a) _a = (a); typeof(b) _b = (b); _a - (_a % _b); })
 
+#define _LARGEFILE64_SOURCE
+
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -105,7 +107,7 @@ static int64_t check_response(Transport* transport, uint32_t size, char* respons
             return dsize;
         }
 
-        g_error = "unknown status code";
+        g_error = android::base::StringPrintf("unknown status code: '%s' size %d", status, size);
         transport->Close();
         break;
     }
@@ -355,4 +357,88 @@ int fb_download_data_sparse(Transport* transport, struct sparse_file* s) {
     }
 
     return _command_end(transport);
+}
+
+static int dump_file(Transport* transport, std::string filename,
+                     unsigned long long filesize)
+{
+    ssize_t size_left, size_read, size_chunk;
+    int r = -1;
+    FILE *file;
+    char *buf;
+
+    // allocate buf
+    buf = reinterpret_cast<char*>(calloc(MAX_SIZE_TRANS_PER_TIME,
+                                  sizeof(char)));
+    if (!buf)
+        die("out of memory");
+
+    file = fopen64(filename.c_str(), "wb");
+    if (!file)
+        die("open file failed");
+
+    size_left = filesize;
+    size_read = 0;
+    size_chunk = size_left;
+
+    for (;;) {
+        if (size_chunk > MAX_SIZE_TRANS_PER_TIME)
+            size_chunk = MAX_SIZE_TRANS_PER_TIME;
+
+        // read chunk
+        r = _command_read_data(transport, buf, size_chunk);
+        if (r < 0)
+            break;
+
+        // chunk data to file
+        if (fwrite(buf, 1, r, file) < (size_t) r) {
+            g_error = android::base::StringPrintf("data write failed (%s)",
+                                                  strerror(errno));
+            r = -1;
+            break;
+        }
+
+        // recalculate sizes
+        size_left -= r;
+        size_read += r;
+        size_chunk = size_left;
+
+        // done
+        if (!size_left)
+            break;
+
+        // print status
+        r = transport->Write("continue", strlen("continue"));
+        if (r < 0)
+            break;
+    }
+
+    if (file)
+        fclose(file);
+
+    if (buf)
+        free(buf);
+
+    return r;
+}
+
+int64_t fb_dump(Transport* transport, const struct fastboot_dump_action *act)
+{
+    int64_t r;
+
+    r = fb_download_data(transport, &act->hdr, sizeof(struct fastboot_header));
+    if (r < 0)
+        return r;
+
+    r = _command_start(transport, act->cmd, INT_MAX, 0);
+    if (r < 0)
+        return r;
+
+    r = dump_file(transport, act->filename, r);
+    if (r < 0)
+        return r;
+
+    transport->Close();
+
+    return 0;
 }

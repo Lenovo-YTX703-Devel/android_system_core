@@ -42,6 +42,7 @@ struct sparse_file;
 int fb_command(Transport* transport, const std::string& cmd);
 int fb_command_response(Transport* transport, const std::string& cmd, char* response);
 int64_t fb_download_data(Transport* transport, const void* data, uint32_t size);
+int64_t fb_dump(Transport* transport, const struct fastboot_dump_action *act);
 int64_t fb_download_data_fd(Transport* transport, int fd, uint32_t size);
 int fb_download_data_sparse(Transport* transport, struct sparse_file* s);
 int64_t fb_upload_data(Transport* transport, const char* outfile);
@@ -69,6 +70,7 @@ void fb_queue_download_fd(const std::string& name, int fd, uint32_t sz);
 void fb_queue_upload(const std::string& outfile);
 void fb_queue_notice(const std::string& notice);
 void fb_queue_wait_for_disconnect(void);
+void fb_queue_dump(struct fastboot_dump_action *act);
 int64_t fb_execute_queue(Transport* transport);
 void fb_set_active(const std::string& slot);
 
@@ -94,5 +96,21 @@ __attribute__((__format__(FASTBOOT_FORMAT_ARCHETYPE, 1, 2)));
 
 /* Current product */
 extern char cur_product[FB_RESPONSE_SZ + 1];
+
+struct fastboot_header {
+    char magic[8];
+    unsigned long long address;
+    unsigned long long zip_size;
+    unsigned long long raw_size;
+};
+
+struct fastboot_dump_action {
+    struct fastboot_header hdr;
+    std::string filename;
+    std::string cmd;
+};
+
+#define MAX_SIZE_TRANS_PER_TIME	(16 * 1024)
+#define RAW_MAGIC_NUM "raw"
 
 #endif
